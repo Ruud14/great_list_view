@@ -42,6 +42,20 @@ class AnimatedSliverMultiBoxAdaptorElement extends RenderObjectElement
     widget.listController._setInterface(this);
   }
 
+  /// The controller follows the list view in and out of the tree, so a list view that is
+  /// rebuilt under a new key can take it over in the same frame.
+  @override
+  void activate() {
+    super.activate();
+    widget.listController._setInterface(this);
+  }
+
+  @override
+  void deactivate() {
+    widget.listController._unsetInterface(this);
+    super.deactivate();
+  }
+
   /// This method has been overridden to give the render object a `dispose` method and to unlink
   /// this list view from its controller.
   @override
@@ -724,8 +738,11 @@ class AnimatedSliverMultiBoxAdaptorElement extends RenderObjectElement
   @override
   void batch(VoidCallback callback) {
     _batch++;
-    callback();
-    _batch--;
+    try {
+      callback();
+    } finally {
+      _batch--;
+    }
     assert(_batch >= 0);
     if (_batch == 0) _intervalListManager.coordinate();
   }
@@ -1093,6 +1110,18 @@ class AnimatedListController {
   }
 
   BuildContext get context => _interface! as BuildContext;
+
+  /// The count of underlying list items the bound list view is tracking, or `null` if
+  /// no list view is bound. It must always match the length of the underlying list.
+  @visibleForTesting
+  int? get debugItemCount => _itemCount;
+
+  int? get _itemCount {
+    final interface = _interface;
+    return interface is AnimatedSliverMultiBoxAdaptorElement
+        ? interface._intervalListManager.list.itemCount
+        : null;
+  }
 
   bool _debugAssertBinded() {
     assert(() {

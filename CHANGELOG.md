@@ -34,3 +34,11 @@ Initial alpha release. Includes `AnimatedSliverList`, `AnimatedListDiffDispatche
 ## [0.2.2] to [0.2.3] - 02.02.2023
 
 - fixed several bugs, more stable version
+
+## [0.2.4] - 04.11.2026
+
+- fixed a null check error when part of a moving group of items, whose last item had just been removed, was moved again; the list view then lost track of its items and asked the builder for items past the end of the list;
+- `AutomaticAnimatedListView` rebuilds its list view from the current list, and reports the error, when it finds the list view out of sync with the list, instead of building items past the end;
+- the controller is unbound when its list view leaves the tree, so a list view rebuilt under a new key can take it over in the same frame;
+- `AnimatedListController.batch` no longer stays locked after an exception;
+- removing a list view while it is animating no longer throws from pending animations and measurements.

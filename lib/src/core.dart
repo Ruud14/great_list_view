@@ -89,6 +89,9 @@ class _Measure {
   _Measure operator -(_Measure m) =>
       _Measure(value - m.value, estimated || m.estimated);
 
+  /// Estimated offsets can come out of order, so a size taken from them is clamped at zero.
+  _Measure get nonNegative => value < 0 ? _Measure(0, estimated) : this;
+
   @override
   String toString() => estimated ? '≈$value' : '$value';
 }

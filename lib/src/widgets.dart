@@ -292,6 +292,13 @@ class AutomaticAnimatedListView<T> extends AnimatedListView {
           listController: listController,
           delegate: AnimatedSliverChildBuilderDelegate(
             (context, index, data) {
+              if (index >= list.length) {
+                // The list view got ahead of the list: rebuild it from the list after this frame.
+                context
+                    .findAncestorStateOfType<_DiffDispatcherWidgetState>()
+                    ?._rebuildAfterFrame(index, list.length);
+                return const SizedBox.shrink();
+              }
               return itemBuilder(context, list[index], data);
             },
             list.length,
@@ -359,6 +366,11 @@ class _DiffDispatcherWidget<T> extends StatefulWidget {
 class _DiffDispatcherWidgetState<T> extends State<_DiffDispatcherWidget<T>> {
   AnimatedListDiffListDispatcher<T>? _dispatcher;
 
+  /// Replaced to throw the list view away and build a new one from the current list.
+  Key _sliverKey = UniqueKey();
+
+  bool _rebuildScheduled = false;
+
   void _createDispatcher() {
     final oldProcessingList = _dispatcher?.discard();
     _dispatcher = AnimatedListDiffListDispatcher<T>(
@@ -367,10 +379,70 @@ class _DiffDispatcherWidgetState<T> extends State<_DiffDispatcherWidget<T>> {
       itemBuilder: widget.itemBuilder,
       comparator: widget.comparator,
     );
-    if (oldProcessingList != null) {
-      _dispatcher!
-          .dispatchNewList(oldProcessingList, detectMoves: widget.detectMoves);
+    if (oldProcessingList != null) _dispatch(oldProcessingList);
+  }
+
+  void _dispatch(List<T> list) {
+    final dispatcher = _dispatcher!;
+    dispatcher.dispatchNewList(list, detectMoves: widget.detectMoves).then(
+        (_) {
+      if (mounted && dispatcher == _dispatcher && !_isInSync) {
+        setState(() => _rebuildSliver(_outOfSyncError()));
+      }
+    }, onError: (Object error, StackTrace stack) {
+      _report(error, stack);
+      if (mounted && dispatcher == _dispatcher) setState(_rebuildSliver);
+    });
+    // A diff short enough to run synchronously has been applied by now.
+    if (!dispatcher.hasPendingTask && !_isInSync) {
+      _rebuildSliver(_outOfSyncError());
     }
+  }
+
+  /// Whether the list view tracks as many items as the list holds.
+  bool get _isInSync {
+    final itemCount = widget.controller._itemCount;
+    return itemCount == null || itemCount == _dispatcher!.currentList.length;
+  }
+
+  FlutterError _outOfSyncError() => FlutterError(
+      'The list view tracked ${widget.controller._itemCount} items while the list holds '
+      '${_dispatcher!.currentList.length}, so it was rebuilt from the list.');
+
+  /// Starts over from the current list, without animating: the intervals of the old list view
+  /// cannot be trusted anymore.
+  void _rebuildSliver([Object? error]) {
+    if (error != null) _report(error, StackTrace.current);
+    _dispatcher?.discard();
+    _dispatcher = AnimatedListDiffListDispatcher<T>(
+      controller: widget.controller,
+      currentList: widget.list,
+      itemBuilder: widget.itemBuilder,
+      comparator: widget.comparator,
+    );
+    _sliverKey = UniqueKey();
+  }
+
+  /// Called while laying out, when an item past the end of the list was asked for.
+  void _rebuildAfterFrame(int index, int length) {
+    if (_rebuildScheduled) return;
+    _rebuildScheduled = true;
+    final error = FlutterError(
+        'The list view asked for item $index while the list holds $length, so it was rebuilt from the list.');
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      _rebuildScheduled = false;
+      if (mounted) setState(() => _rebuildSliver(error));
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
+  void _report(Object error, StackTrace stack) {
+    FlutterError.reportError(FlutterErrorDetails(
+      exception: error,
+      stack: stack,
+      library: 'great_list_view',
+      context: ErrorDescription('while applying a new list'),
+    ));
   }
 
   @override
@@ -382,20 +454,21 @@ class _DiffDispatcherWidgetState<T> extends State<_DiffDispatcherWidget<T>> {
   @override
   void didUpdateWidget(_DiffDispatcherWidget<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.controller != widget.controller ||
-        oldWidget.itemBuilder != widget.itemBuilder ||
+    if (oldWidget.controller != widget.controller) {
+      // The new controller is not bound to the list view yet, so there is nothing to animate.
+      _rebuildSliver();
+      return;
+    }
+    if (oldWidget.itemBuilder != widget.itemBuilder ||
         oldWidget.comparator != widget.comparator) {
       _createDispatcher();
     }
-    if (oldWidget.list != widget.list) {
-      _dispatcher!
-          .dispatchNewList(widget.list, detectMoves: widget.detectMoves);
-    }
+    if (oldWidget.list != widget.list) _dispatch(widget.list);
   }
 
   @override
   Widget build(BuildContext context) {
-    return widget.child;
+    return KeyedSubtree(key: _sliverKey, child: widget.child);
   }
 }
 

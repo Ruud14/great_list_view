@@ -466,7 +466,7 @@ class _IntervalManager with TickerProviderMixin {
       final f = interval.startMeasuring(interface);
       if (f is Future<bool>) {
         f.then((v) {
-          if (v) coordinate();
+          if (v && !_disposed) coordinate();
         });
       }
     });
@@ -700,7 +700,7 @@ class _IntervalManager with TickerProviderMixin {
                 i + r2mi.subList.buildCount, r2mi.popUpList.popUpBuildCount,
                 popUpList: r2mi.popUpList);
 
-            fromSize = fromEnd - fromStart;
+            fromSize = (fromEnd - fromStart).nonNegative;
 
             if (fromSize.value > 50 && fromSize.value < 70 && i == 1) {
               fromStart = interface.estimateLayoutOffset(
@@ -717,7 +717,7 @@ class _IntervalManager with TickerProviderMixin {
                 r2mi.buildOffset, list.buildCount);
             fromEnd = interface.estimateLayoutOffset(
                 r2mi.buildOffset + r2mi.buildCount, list.buildCount);
-            fromSize = fromEnd - fromStart;
+            fromSize = (fromEnd - fromStart).nonNegative;
             fromBoxSize = fromSize;
           }
 
@@ -798,6 +798,7 @@ class _IntervalManager with TickerProviderMixin {
 
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _postponed = false;
+            if (_disposed) return;
 
             _dbgBegin('_readyToMoveToDrop postponed');
 
@@ -923,6 +924,7 @@ class _IntervalManager with TickerProviderMixin {
         startTime: data.startTime,
         onDispose: (a) => animations.remove(a),
         onCompleted: (a) {
+          if (_disposed) return;
           // when the animation is complete it notifies all its linked intervals
           if (a.intervals.isNotEmpty) {
             a.intervals.toList().forEach((i) {
@@ -941,7 +943,12 @@ class _IntervalManager with TickerProviderMixin {
   @mustCallSuper
   void dispose() {
     assert(debugAssertNotDisposed());
-    list.whereType<_SubListInterval>().forEach((i) => i.subList.dispose());
+    // A drop interval shares the sub list of the interval it belongs to, so each one is disposed once.
+    final subLists = <_IntervalList>{
+      ...list.whereType<_SubListInterval>().map((i) => i.subList),
+      ..._listOfPopUps.whereType<_MovingPopUpList>().expand((p) => p.subLists),
+    };
+    subLists.where((l) => !l._disposed).forEach((l) => l.dispose());
     _listOfPopUps.clear();
     animations.clear();
     updates.clear();

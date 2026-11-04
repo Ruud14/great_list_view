@@ -244,21 +244,28 @@ class _IntervalList extends _LinkedList<_Interval>
 
     final middle = leading + middleItemCount;
     var ic = 0;
+    _IntervalList? previousSubList;
     _Interval? i = first;
     while (i != null) {
       var next = i.next;
       i._remove();
-      if (ic < leading) {
-        leftSubList!._add(i);
-      } else if (ic < middle) {
-        middleSubList!._add(i);
-      } else {
-        rightSubList!._add(i);
+      var subList = ic < leading
+          ? leftSubList
+          : ic < middle
+              ? middleSubList
+              : rightSubList;
+      // An interval holding no items (one being removed or shrinking away) can sit past the last
+      // boundary, on a side that was not created: it stays with the sub list before it.
+      if (subList == null && i.itemCount == 0) {
+        subList = previousSubList ?? leftSubList ?? middleSubList ?? rightSubList;
       }
+      subList!._add(i);
+      previousSubList = subList;
       ic += i.itemCount;
       i = next;
     }
 
+    leftSubList?._invalidate();
     middleSubList?._invalidate();
     rightSubList?._invalidate();
 

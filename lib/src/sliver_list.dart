@@ -36,7 +36,9 @@ abstract class AnimatedRenderSliverMultiBoxAdaptor
   void markSafeNeedsLayout() {
     if (WidgetsBinding.instance.schedulerPhase ==
         SchedulerPhase.persistentCallbacks) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => markNeedsLayout());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (attached) markNeedsLayout();
+      });
     } else {
       markNeedsLayout();
     }
@@ -215,7 +217,7 @@ abstract class AnimatedRenderSliverMultiBoxAdaptor
 
       if (fixScrollableRepainting) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _notifyScrollable();
+          if (attached) _notifyScrollable();
         });
       }
     }
@@ -994,11 +996,11 @@ class AnimatedRenderSliverList extends AnimatedRenderSliverMultiBoxAdaptor {
     for (i = startingCount; i < count; i++) {
       if (size >= maxSize) break;
       await Future.delayed(Duration(milliseconds: 0), () {
-        if (cancelled?.value ?? false) return _Measure.zero;
+        if ((cancelled?.value ?? false) || !attached) return _Measure.zero;
         size += measureItem(
             builder.call(childManager, i - startingCount), childConstraints);
       });
-      if (cancelled?.value ?? false) return _Measure.zero;
+      if ((cancelled?.value ?? false) || !attached) return _Measure.zero;
     }
     if (i < count) size *= (count / i);
     return _Measure(size, i < count);
