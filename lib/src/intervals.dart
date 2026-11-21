@@ -1685,15 +1685,18 @@ class _MovingInterval extends _AnimatedSpaceInterval
 
     return _SplitResult(
       () sync* {
-        if (leftInterval != null) {
-          yield leftInterval;
-          yield leftInterval.dropInterval;
+        // A local keeps the null check: Dart 3.13 drops promotion across a yield.
+        final interval = leftInterval;
+        if (interval != null) {
+          yield interval;
+          yield interval.dropInterval;
         }
       }(),
       () sync* {
-        if (rightInterval != null) {
-          yield rightInterval;
-          yield rightInterval.dropInterval;
+        final interval = rightInterval;
+        if (interval != null) {
+          yield interval;
+          yield interval.dropInterval;
         }
       }(),
       createMiddle ? middleInterval?.iterable() : middle,
